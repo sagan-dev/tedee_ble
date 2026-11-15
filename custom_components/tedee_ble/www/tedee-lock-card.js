@@ -5,7 +5,7 @@
  * last trigger / user, and Lock / Unlock / Open action buttons.
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.5.1";
 
 class TedeeLockCard extends HTMLElement {
   /* ── lifecycle ─────────────────────────────────────────────── */
@@ -206,12 +206,15 @@ class TedeeLockCard extends HTMLElement {
 
     const haState = lockState ? lockState.state : "unavailable";
     const isUpdating = !!(lockState && lockState.attributes && lockState.attributes.is_updating);
-    // Use last_action attribute for finer states (e.g. partially_unlocked).
+    // The entity state is authoritative. last_action is only the last *event*
+    // and can be stale (e.g. a manual unlock while BLE was down is picked up by
+    // a state read that doesn't advance it), so it may only refine "unlocked"
+    // into "partially_unlocked" — never override locked/unlocked/jammed.
     // Updating overrides everything else so the card reflects the firmware-update lockout.
     const lastAction = lockState && lockState.attributes && lockState.attributes.last_action;
     const state = isUpdating
       ? "updating"
-      : lastAction && this._lockMeta(lastAction).label !== "Unavailable"
+      : haState === "unlocked" && lastAction === "partially_unlocked"
         ? lastAction
         : haState;
     const meta = this._lockMeta(state);
