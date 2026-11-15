@@ -341,14 +341,30 @@ class TedeeCoordinator(DataUpdateCoordinator[TedeeState]):
             await self._connect()
         except asyncio.CancelledError:
             logger.warning("Setup of %s was cancelled, will retry", self.lock_name)
+            await self._cleanup_failed_setup()
             raise ConfigEntryNotReady(
                 f"Connection to {self.lock_name} was cancelled (device may be updating)"
             )
         except Exception as err:
             logger.error("Failed to connect to %s: %s", self.lock_name, err)
+            await self._cleanup_failed_setup()
             raise ConfigEntryNotReady(
                 f"Could not connect to {self.lock_name}: {err}"
             ) from err
+
+    async def _cleanup_failed_setup(self) -> None:
+        """Tear down what a failed setup left behind.
+
+        HA drops this coordinator after ConfigEntryNotReady and builds a new one
+        on retry. Without this, a BLE link left open by a failed handshake keeps
+        its disconnect callback pointing here, so the orphan would schedule its
+        own reconnects and fight the retry for the lock; the 12 h firmware poll
+        registered above would also leak once per retry.
+        """
+        try:
+            await self.async_shutdown()
+        except Exception:
+            logger.debug("Cleanup after failed setup raised", exc_info=True)
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
